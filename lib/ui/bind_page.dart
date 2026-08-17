@@ -37,10 +37,14 @@ class _BindPageState extends State<BindPage> {
   }
 
   Future<void> _loadConfig() async {
-    final config = await _store.loadClientConfig();
-    if (config != null) {
-      _idController.text = config.clientId;
-      _secretController.text = config.clientSecret;
+    try {
+      final config = await _store.loadClientConfig();
+      if (config != null) {
+        _idController.text = config.clientId;
+        _secretController.text = config.clientSecret;
+      }
+    } catch (_) {
+      // 读取本地配置失败时保持空输入,让用户手动填写
     }
   }
 

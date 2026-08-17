@@ -38,7 +38,11 @@ class _AccountPageState extends State<AccountPage> {
       _error = null;
     });
     try {
-      final source = await _settings.loadStorageSource();
+      // 设置读取失败时使用默认云盘来源,不阻塞账户信息展示
+      String source = AppSettings.sourceCloud;
+      try {
+        source = await _settings.loadStorageSource();
+      } catch (_) {}
       final info = await widget.drive.getUserInfo();
       if (!mounted) return;
       setState(() {
@@ -60,7 +64,11 @@ class _AccountPageState extends State<AccountPage> {
   Future<void> _changeSource(String source) async {
     if (source == _source) return;
     setState(() => _source = source);
-    await _settings.saveStorageSource(source);
+    try {
+      await _settings.saveStorageSource(source);
+    } catch (_) {
+      // 设置保存失败不阻塞使用
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -74,7 +82,29 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _logout() async {
-    await widget.drive.logout();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('注销账号'),
+        content: const Text('注销后将清除本地登录凭据,需要重新授权云盘才能继续使用。确定注销吗?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('注销'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.drive.logout();
+    } catch (_) {
+      // 即便清除凭据失败也回到绑定页,避免卡死
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
     widget.onLogout?.call();
@@ -181,7 +211,7 @@ class _AccountPageState extends State<AccountPage> {
           icon: const Icon(Icons.logout),
           label: const Text('注销账号'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
+            primary: Theme.of(context).colorScheme.error,
           ),
         ),
       ],

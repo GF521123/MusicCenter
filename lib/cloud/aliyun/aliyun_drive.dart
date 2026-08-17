@@ -32,7 +32,9 @@ class AliyunDrive implements CloudDrive {
   AliyunDrive({AliyunTokenStore? store, AliyunOAuth? oauth, AliyunOpenApi? api})
       : _store = store ?? AliyunTokenStore(),
         _oauth = oauth ?? AliyunOAuth(),
-        _api = api ?? AliyunOpenApi();
+        _api = api ?? AliyunOpenApi() {
+    _api.onAuthError = _onApiAuthError;
+  }
 
   @override
   String get name => '阿里云盘';
@@ -94,7 +96,11 @@ class AliyunDrive implements CloudDrive {
         // 浏览器打开失败不阻塞,提示用户手动打开
         throw CloudException('无法自动打开浏览器,请手动访问:$url');
       }
-      return await _waitForCallback(server);
+      // 等待授权回调,2 分钟无响应视为超时,避免页面一直转圈
+      return await _waitForCallback(server).timeout(
+        const Duration(minutes: 2),
+        onTimeout: () => throw const CloudException('授权等待超时,请重新发起授权'),
+      );
     } finally {
       await server.close(force: true);
     }
@@ -175,6 +181,12 @@ class AliyunDrive implements CloudDrive {
     );
   }
 
+  /// API 返回 401:丢弃内存 token,重新加载/刷新后由 API 层自动重试
+  Future<void> _onApiAuthError() async {
+    _accessToken = null;
+    await _ensureToken();
+  }
+
   /// 确保 access token 有效,过期自动刷新
   Future<void> _ensureToken() async {
     if (_accessToken != null) return;
@@ -198,7 +210,15 @@ class AliyunDrive implements CloudDrive {
     _driveId = info.defaultDriveId;
   }
 
-  Future<void> _refresh(StoredToken token) async {
+  /// 正在进行的刷新任务:并发场景共享同一次刷新,避免重复请求
+  Future<void>? _refreshFuture;
+
+  Future<void> _refresh(StoredToken token) {
+    return _refreshFuture ??=
+        _doRefresh(token).whenComplete(() => _refreshFuture = null);
+  }
+
+  Future<void> _doRefresh(StoredToken token) async {
     final config = await _store.loadClientConfig();
     if (config == null) {
       throw const CloudException('缺少 Client 配置,请重新绑定云盘');

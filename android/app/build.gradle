@@ -47,7 +47,8 @@ android {
         applicationId "cn.rivergod.music.center"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-build-configuration.
-        minSdkVersion flutter.minSdkVersion
+        // flutter_secure_storage 的 encryptedSharedPreferences 需要 API 23+
+        minSdkVersion 23
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName

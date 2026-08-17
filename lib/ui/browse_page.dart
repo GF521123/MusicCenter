@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../cloud/cloud_drive.dart';
 import '../cloud/cloud_models.dart';
@@ -25,6 +26,12 @@ class _BrowsePageState extends State<BrowsePage> {
   String? _error;
   String _userName = '';
 
+  /// 请求序号:丢弃过期的目录加载响应,防止快速切换目录时错乱
+  int _requestSeq = 0;
+
+  /// 是否正在获取下载链接,防止连点重复弹出加载框
+  bool _fetchingLink = false;
+
   String get _currentParentId =>
       _folderStack.isEmpty ? 'root' : _folderStack.last.fileId;
 
@@ -50,6 +57,7 @@ class _BrowsePageState extends State<BrowsePage> {
   }
 
   Future<void> _loadFiles({bool reset = false}) async {
+    final seq = reset ? ++_requestSeq : _requestSeq;
     if (reset) {
       setState(() {
         _loading = true;
@@ -61,7 +69,7 @@ class _BrowsePageState extends State<BrowsePage> {
     try {
       final page = await widget.drive
           .listFolder(_currentParentId, marker: reset ? null : _nextMarker);
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
         if (reset) {
           _files = page.items;
@@ -75,11 +83,20 @@ class _BrowsePageState extends State<BrowsePage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _loadingMore = false;
-        _error = '$e';
-      });
+      if (reset) {
+        // 首屏/切目录失败:整页显示错误并提供重试
+        setState(() {
+          _loading = false;
+          _loadingMore = false;
+          _error = '$e';
+        });
+      } else {
+        // 加载更多失败:保留已有列表,仅提示
+        setState(() => _loadingMore = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('加载更多失败:$e')),
+        );
+      }
     }
   }
 
@@ -95,8 +112,45 @@ class _BrowsePageState extends State<BrowsePage> {
   }
 
   Future<void> _onFileTap(CloudFile file) async {
-    final url = await widget.drive.getDownloadUrl(file.fileId);
-    if (!mounted) return;
+    if (_fetchingLink) return;
+    _fetchingLink = true;
+    try {
+      // 先弹出加载提示,避免点击后无反馈;禁止返回键关闭,保证可精确关闭
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => WillPopScope(
+          onWillPop: () async => false,
+          child: AlertDialog(
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('正在获取下载链接...'),
+              ],
+            ),
+          ),
+        ),
+      );
+      final url = await widget.drive.getDownloadUrl(file.fileId);
+      if (!mounted) return;
+      Navigator.of(context).pop(); // 关闭加载提示
+      if (!mounted) return;
+      await _showFileDialog(file, url);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // 关闭加载提示
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('获取下载链接失败:$e')),
+      );
+    } finally {
+      _fetchingLink = false;
+    }
+  }
+
+  Future<void> _showFileDialog(CloudFile file, String url) async {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -115,6 +169,18 @@ class _BrowsePageState extends State<BrowsePage> {
           ),
         ),
         actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: url));
+              if (!mounted) return;
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('下载链接已复制')),
+              );
+            },
+            icon: const Icon(Icons.copy, size: 18),
+            label: const Text('复制链接'),
+          ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('关闭'),
@@ -136,7 +202,29 @@ class _BrowsePageState extends State<BrowsePage> {
       );
 
   Future<void> _logout() async {
-    await widget.drive.logout();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('注销账号'),
+        content: const Text('注销后将清除本地登录凭据,需要重新授权云盘才能继续使用。确定注销吗?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('注销'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.drive.logout();
+    } catch (_) {
+      // 清除凭据失败也继续回到绑定页,避免卡死
+    }
     widget.onLogout?.call();
   }
 
@@ -166,7 +254,7 @@ class _BrowsePageState extends State<BrowsePage> {
         actions: [
           IconButton(
             tooltip: '刷新',
-            onPressed: () => _loadFiles(reset: true),
+            onPressed: _loading ? null : () => _loadFiles(reset: true),
             icon: const Icon(Icons.refresh),
           ),
           IconButton(
@@ -223,7 +311,16 @@ class _BrowsePageState extends State<BrowsePage> {
       );
     }
     if (_files.isEmpty) {
-      return const Center(child: Text('文件夹为空'));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.folder_open, size: 56, color: Colors.grey),
+            SizedBox(height: 12),
+            Text('此文件夹暂无内容', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
     }
     return Scrollbar(
       child: NotificationListener<ScrollNotification>(

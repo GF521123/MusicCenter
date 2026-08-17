@@ -1,0 +1,37 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:        # 支持在 Actions 页面手动触发
+  push:
+    branches: [master]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 固定与本地一致的 Flutter 3.0(Dart 2.x),因为项目 sdk 约束为 >=2.17.0 <3.0.0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.0.0'
+          channel: stable
+
+      - name: 拉取依赖
+        run: flutter pub get
+
+      - name: 构建 Windows Release
+        run: flutter build windows --release
+
+      - name: 打包 zip(直接可分发的运行包)
+        shell: powershell
+        run: Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath 'music_center_windows.zip'
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-center-windows
+          path: |
+            music_center_windows.zip
+            build/windows/x64/runner/Release
+          if-no-files-found: error

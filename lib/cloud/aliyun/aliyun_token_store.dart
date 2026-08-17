@@ -44,22 +44,29 @@ class AliyunTokenStore {
     final access = await _storage.read(key: _kAccessToken);
     final refresh = await _storage.read(key: _kRefreshToken);
     final expiresAt = await _storage.read(key: _kExpiresAt);
+    // 过期时间损坏时按无 token 处理,避免抛异常卡死在错误页
+    final expiresMs = expiresAt == null ? null : int.tryParse(expiresAt);
     if (access == null ||
         access.isEmpty ||
         refresh == null ||
         refresh.isEmpty ||
-        expiresAt == null) {
+        expiresMs == null) {
       return null;
     }
     return StoredToken(
       accessToken: access,
       refreshToken: refresh,
-      expiresAt: DateTime.fromMillisecondsSinceEpoch(int.parse(expiresAt)),
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresMs),
     );
   }
 
-  /// 清除全部阿里云盘本地数据(注销)
+  /// 清除阿里云盘本地数据(注销)。
+  /// 只删除云盘相关 key,保留应用设置(如音乐存储来源)。
   Future<void> clear() async {
-    await _storage.deleteAll();
+    await _storage.delete(key: _kClientId);
+    await _storage.delete(key: _kClientSecret);
+    await _storage.delete(key: _kAccessToken);
+    await _storage.delete(key: _kRefreshToken);
+    await _storage.delete(key: _kExpiresAt);
   }
 }
