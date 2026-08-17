@@ -1,37 +1,49 @@
-# MusicCenter
+# 云盘音乐 (MusicCenter)
 
-#### 介绍
-基于Flutter音乐播放器，目前Windows/Android
+基于 Flutter 的云盘音乐播放器。授权接入云盘(阿里云盘首发,百度云盘开发中),选中云盘文件夹后,自动加载其中的音乐与歌词(.lrc),支持边下边播与在线播放双模式。
 
-#### 软件架构
-软件架构说明
+## 项目信息
 
+| 项 | 值 |
+|----|----|
+| 项目名 | music_center |
+| 显示名称 | 云盘音乐 |
+| 包名(applicationId / bundle id) | cn.rivergod.music.center |
+| 版本 | 0.1.0+1 |
+| 目标平台 | Windows(首发) / Android / iOS(后期) |
 
-#### 安装教程
+## 技术栈
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+- Flutter(Dart)
+- 音频播放:待定(media_kit / audioplayers / just_audio 评估中)
 
-#### 使用说明
+## 目录规划
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+```
+lib/
+├── main.dart
+├── cloud/        # 云盘抽象层(CloudDrive 接口 + 阿里云实现 + 百度云预留)
+├── player/       # 播放核心(双模式:边下边播 / 在线播放)
+├── lyrics/       # .lrc 解析与同步
+├── model/        # 数据模型(歌曲/专辑/播放列表)
+├── data/         # 本地存储(元数据/收藏/缓存索引)
+├── ui/           # 界面(主布局/列表/播放页)
+└── utils/        # 通用工具
+```
 
-#### 参与贡献
+## 需求与进度
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+- 完整需求见 [PRD.md](PRD.md)
+- 当前进度:M0 项目初始化 ✅ → M1 阿里云盘接入(未开始)
 
+## 开发环境
 
-#### 特技
+- Flutter SDK(`/opt/flutter`)
+- Windows 桌面构建需 Visual Studio 2022 + C++ 桌面开发组件(尚未安装)
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## 运行
+
+```bash
+flutter pub get
+flutter run -d windows
+```
