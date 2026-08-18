@@ -15,18 +15,23 @@ class AliyunTokenStore {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
-  /// 保存应用注册信息(Client ID / Secret)
+  /// 保存应用注册信息(Client ID / 可选 Secret)
   Future<void> saveClientConfig(ClientConfig config) async {
     await _storage.write(key: _kClientId, value: config.clientId);
-    await _storage.write(key: _kClientSecret, value: config.clientSecret);
+    final secret = config.clientSecret;
+    if (secret != null && secret.isNotEmpty) {
+      await _storage.write(key: _kClientSecret, value: secret);
+    } else {
+      await _storage.delete(key: _kClientSecret);
+    }
   }
 
   Future<ClientConfig?> loadClientConfig() async {
     final id = await _storage.read(key: _kClientId);
-    final secret = await _storage.read(key: _kClientSecret);
-    if (id == null || id.isEmpty || secret == null || secret.isEmpty) {
+    if (id == null || id.isEmpty) {
       return null;
     }
+    final secret = await _storage.read(key: _kClientSecret);
     return ClientConfig(clientId: id, clientSecret: secret);
   }
 

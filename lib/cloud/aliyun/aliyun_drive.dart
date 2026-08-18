@@ -1,8 +1,3 @@
-import 'dart:async';
-import 'dart:io';
-
-import 'package:url_launcher/url_launcher.dart';
-
 import 'aliyun_api.dart';
 import 'aliyun_config.dart';
 import 'aliyun_models.dart';
@@ -14,13 +9,10 @@ import '../cloud_models.dart';
 
 /// 阿里云盘实现。
 ///
-/// 授权方式(Windows 首发):
-/// 1. 启动本地回调服务器(127.0.0.1:51234)
-/// 2. 打开系统浏览器跳转授权页
-/// 3. 用户授权后平台回调本地服务器,捕获 code
-/// 4. 用 code 换取 token 并安全存储
-///
-/// 注:移动端(Android/iOS)后期改用自定义 scheme 回调。
+/// 授权方式(2025-07 起官方暂停个人开发者申请,不再走注册应用的浏览器授权):
+/// 1. 用户在网页版(www.alipan.com)F12 中取到自己的 refresh_token
+/// 2. 在绑定页粘贴 refresh_token,app 用内置 client_id(接口仅校验非空)直连换 token
+/// 3. token 过期后用 refresh_token 自动刷新
 class AliyunDrive implements CloudDrive {
   final AliyunTokenStore _store;
   final AliyunOAuth _oauth;
@@ -60,86 +52,36 @@ class AliyunDrive implements CloudDrive {
     return token != null;
   }
 
-  @override
-  Future<void> authorize() async {
-    final config = await _store.loadClientConfig();
-    if (config == null) {
-      throw const CloudException('请先在设置中配置 Client ID / Client Secret');
+  /// 用 refresh_token 直连换取 token(无需注册开发者应用)。
+  /// [clientId] 留空时使用内置默认值。
+  Future<void> bindWithRefreshToken(String refreshToken,
+      {String? clientId}) async {
+    if (refreshToken.trim().isEmpty) {
+      throw const CloudException('refresh_token 不能为空');
     }
-    final code = await _startLocalCallbackServer(config);
-    final token = await _oauth.exchangeCode(
-      code: code,
-      clientId: config.clientId,
-      clientSecret: config.clientSecret,
+    final id = (clientId == null || clientId.isEmpty)
+        ? AliyunConfig.builtinClientId
+        : clientId;
+    // 先保存配置,确保后续刷新可用
+    await _store.saveClientConfig(ClientConfig(clientId: id));
+    final token = await _oauth.refreshToken(
+      refreshToken: refreshToken.trim(),
+      clientId: id,
     );
     await _store.saveToken(token);
     _accessToken = token.accessToken;
+    _driveId = null;
   }
 
-  /// 启动本地回调服务器并打开浏览器,等待授权码
-  Future<String> _startLocalCallbackServer(ClientConfig config) async {
-    final server = await HttpServer.bind(
-      InternetAddress.loopbackIPv4,
-      AliyunConfig.redirectPort,
-    );
-    try {
-      final url = await _oauth.buildAuthorizeUrl(
-        clientId: config.clientId,
-        redirectUri: AliyunConfig.redirectUri,
-      );
-      try {
-        await launchUrl(
-          Uri.parse(url),
-          mode: LaunchMode.externalApplication,
-        );
-      } catch (_) {
-        // 浏览器打开失败不阻塞,提示用户手动打开
-        throw CloudException('无法自动打开浏览器,请手动访问:$url');
-      }
-      // 等待授权回调,2 分钟无响应视为超时,避免页面一直转圈
-      return await _waitForCallback(server).timeout(
-        const Duration(minutes: 2),
-        onTimeout: () => throw const CloudException('授权等待超时,请重新发起授权'),
-      );
-    } finally {
-      await server.close(force: true);
+  /// 兼容旧入口:读取本地 refresh_token 刷新(若已绑定过)。
+  /// 新绑定流程请使用 [bindWithRefreshToken]。
+  @override
+  Future<void> authorize() async {
+    final token = await _store.loadToken();
+    if (token == null || token.refreshToken.isEmpty) {
+      throw const CloudException('请先在绑定页粘贴 refresh_token');
     }
-  }
-
-  Future<String> _waitForCallback(HttpServer server) {
-    final completer = Completer<String>();
-    server.listen((request) {
-      final uri = request.uri;
-      if (uri.path == '/oauth/callback') {
-        final code = uri.queryParameters['code'];
-        final error = uri.queryParameters['error'];
-        request.response.statusCode = HttpStatus.ok;
-        request.response.headers.contentType = ContentType.html;
-        if (code != null && code.isNotEmpty) {
-          request.response.write(
-            '<html><head><meta charset="utf-8"></head>'
-            '<body style="font-family:sans-serif;text-align:center;margin-top:100px;">'
-            '<h2>授权成功</h2><p>可以关闭此页面,返回应用。</p>'
-            '</body></html>',
-          );
-          completer.complete(code);
-        } else {
-          final desc = error ?? '未知错误';
-          request.response.write(
-            '<html><head><meta charset="utf-8"></head>'
-            '<body style="font-family:sans-serif;text-align:center;margin-top:100px;">'
-            '<h2>授权失败</h2><p>$desc</p>'
-            '</body></html>',
-          );
-          completer.completeError(CloudException('授权失败:$desc'));
-        }
-      } else {
-        request.response.statusCode = HttpStatus.notFound;
-        request.response.write('Not Found');
-      }
-      request.response.close();
-    });
-    return completer.future;
+    await bindWithRefreshToken(token.refreshToken);
   }
 
   @override
@@ -220,13 +162,11 @@ class AliyunDrive implements CloudDrive {
 
   Future<void> _doRefresh(StoredToken token) async {
     final config = await _store.loadClientConfig();
-    if (config == null) {
-      throw const CloudException('缺少 Client 配置,请重新绑定云盘');
-    }
+    final clientId = config?.clientId ?? AliyunConfig.builtinClientId;
     final newToken = await _oauth.refreshToken(
       refreshToken: token.refreshToken,
-      clientId: config.clientId,
-      clientSecret: config.clientSecret,
+      clientId: clientId,
+      clientSecret: config?.clientSecret,
     );
     await _store.saveToken(newToken);
     _accessToken = newToken.accessToken;

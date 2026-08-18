@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../cloud/aliyun/aliyun_drive.dart';
-import '../cloud/aliyun/aliyun_models.dart';
-import '../cloud/aliyun/aliyun_token_store.dart';
 import '../cloud/cloud_exception.dart';
 
-/// 绑定云盘页:配置 Client ID / Secret 并发起授权
+/// 绑定云盘页:粘贴 refresh_token 直连授权
+/// (官方 2025-07 起暂停个人开发者申请,不再走注册应用 + 浏览器授权)
 class BindPage extends StatefulWidget {
   final AliyunDrive drive;
   final VoidCallback onBound;
@@ -17,60 +16,34 @@ class BindPage extends StatefulWidget {
 }
 
 class _BindPageState extends State<BindPage> {
-  final TextEditingController _idController = TextEditingController();
-  final TextEditingController _secretController = TextEditingController();
-  final AliyunTokenStore _store = AliyunTokenStore();
+  final TextEditingController _tokenController = TextEditingController();
   bool _busy = false;
   String? _status;
 
   @override
-  void initState() {
-    super.initState();
-    _loadConfig();
-  }
-
-  @override
   void dispose() {
-    _idController.dispose();
-    _secretController.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadConfig() async {
-    try {
-      final config = await _store.loadClientConfig();
-      if (config != null) {
-        _idController.text = config.clientId;
-        _secretController.text = config.clientSecret;
-      }
-    } catch (_) {
-      // 读取本地配置失败时保持空输入,让用户手动填写
-    }
-  }
-
-  Future<void> _authorize() async {
-    final id = _idController.text.trim();
-    final secret = _secretController.text.trim();
-    if (id.isEmpty || secret.isEmpty) {
-      _showError('请填写 Client ID 与 Client Secret');
+  Future<void> _bind() async {
+    final refreshToken = _tokenController.text.trim();
+    if (refreshToken.isEmpty) {
+      _showError('请先粘贴 refresh_token');
       return;
     }
     setState(() {
       _busy = true;
-      _status = '正在打开授权页面...';
+      _status = '正在验证并换取访问凭证...';
     });
     try {
-      await _store.saveClientConfig(
-        ClientConfig(clientId: id, clientSecret: secret),
-      );
-      await widget.drive.init();
-      await widget.drive.authorize();
+      await widget.drive.bindWithRefreshToken(refreshToken);
       if (!mounted) return;
       widget.onBound();
     } on CloudException catch (e) {
       _showError(e.message);
     } catch (e) {
-      _showError('授权失败:$e');
+      _showError('绑定失败:$e');
     } finally {
       if (mounted) {
         setState(() {
@@ -93,7 +66,7 @@ class _BindPageState extends State<BindPage> {
       appBar: AppBar(title: const Text('绑定阿里云盘')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
+          constraints: const BoxConstraints(maxWidth: 560),
           child: ListView(
             padding: const EdgeInsets.all(24),
             shrinkWrap: true,
@@ -107,34 +80,25 @@ class _BindPageState extends State<BindPage> {
               ),
               const SizedBox(height: 4),
               const Text(
-                '首次使用需授权阿里云盘,请先注册开放平台应用',
+                '粘贴 refresh_token 即可直连,无需注册开发者应用',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 24),
               TextField(
-                controller: _idController,
+                controller: _tokenController,
+                maxLines: 3,
+                minLines: 2,
                 decoration: const InputDecoration(
-                  labelText: 'Client ID',
-                  hintText: '开放平台应用 Client ID',
+                  labelText: 'refresh_token',
+                  hintText: '粘贴阿里云盘网页版获取的 refresh_token',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.vpn_key_outlined),
                 ),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _secretController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Client Secret',
-                  hintText: '开放平台应用 Client Secret',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-              ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: _busy ? null : _authorize,
+                onPressed: _busy ? null : _bind,
                 icon: _busy
                     ? const SizedBox(
                         width: 18,
@@ -142,7 +106,7 @@ class _BindPageState extends State<BindPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.login),
-                label: Text(_busy ? '授权中...' : '保存并授权'),
+                label: Text(_busy ? '绑定中...' : '保存并绑定'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
@@ -159,9 +123,12 @@ class _BindPageState extends State<BindPage> {
               const Divider(),
               const SizedBox(height: 12),
               Text(
-                '注册指引\n1. 访问阿里云盘开放平台(www.aliyundrive.com/developer)创建应用\n'
-                '2. 授权回调地址(redirect_uri)填写:\nhttp://127.0.0.1:51234/oauth/callback\n'
-                '3. 申请 file:all:read 只读权限',
+                '获取 refresh_token(约 1 分钟)\n'
+                '1. 浏览器打开 www.alipan.com 并登录\n'
+                '2. 按 F12 打开开发者工具 → 顶部选 "应用 / Application"\n'
+                '3. 左侧 "本地存储 / Local Storage" → 点 https://www.alipan.com\n'
+                '4. 找到键 token,展开其 JSON,复制 refresh_token 的值粘贴到上方\n\n'
+                '提示:refresh_token 长期有效;应用会定期用它自动换取新 token,无需重复操作。',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],

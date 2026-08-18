@@ -1,9 +1,11 @@
 /// 阿里云盘 OAuth 凭据配置(客户端注册信息)
 class ClientConfig {
   final String clientId;
-  final String clientSecret;
 
-  const ClientConfig({required this.clientId, required this.clientSecret});
+  /// 可选:官方接口实测不校验 client_secret,个人可留空(用内置 client_id 直连)
+  final String? clientSecret;
+
+  const ClientConfig({required this.clientId, this.clientSecret});
 }
 
 /// OAuth Token(access + refresh)

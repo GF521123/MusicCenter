@@ -53,11 +53,13 @@ class AliyunOAuth {
     return _parseToken(resp.data);
   }
 
-  /// 刷新 token
+  /// 用 refresh_token 换取新 token(绑定页粘贴 refresh_token 后直连调用)。
+  /// 实测 openapi.alipan.com 仅校验 client_id 非空、不校验应用真实性,
+  /// 因此 clientSecret 可选,个人用户使用内置 client_id 即可。
   Future<AliyunToken> refreshToken({
     required String refreshToken,
     required String clientId,
-    required String clientSecret,
+    String? clientSecret,
   }) async {
     final resp = await _dio.post(
       '',
@@ -65,7 +67,8 @@ class AliyunOAuth {
         'grant_type': 'refresh_token',
         'refresh_token': refreshToken,
         'client_id': clientId,
-        'client_secret': clientSecret,
+        if (clientSecret != null && clientSecret.isNotEmpty)
+          'client_secret': clientSecret,
       },
       options: Options(contentType: Headers.jsonContentType),
     );
