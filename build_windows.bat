@@ -33,9 +33,16 @@ echo [2/3] flutter build windows --release ...
 call flutter build windows --release
 if errorlevel 1 goto fail
 
-set "OUT=%cd%\build\windows\x64\runner\Release"
-set "ZIP=%cd%\music_center_windows.zip"
+set "ZIP=%cd%\rivergod_music_windows.zip"
 echo [3/3] Packing %ZIP% ...
+rem 自动定位 Release 产物目录(兼容不同 Flutter 版本的路径差异)
+set "OUT="
+for /d %%d in ("%cd%\build\windows\runner\Release" "%cd%\build\windows\x64\runner\Release") do if exist "%%d" set "OUT=%%d"
+if not defined OUT (
+    echo [ERROR] 未找到 Release 产物目录,请检查 build\windows 下的结构
+    goto fail
+)
+echo     Release dir: %OUT%
 if exist "%ZIP%" del /q "%ZIP%"
 powershell -NoProfile -Command "Compress-Archive -Path '%OUT%\*' -DestinationPath '%ZIP%' -Force"
 if errorlevel 1 goto fail
@@ -43,7 +50,7 @@ if errorlevel 1 goto fail
 echo.
 echo ============================================================
 echo  Build OK!
-echo    exe:  %OUT%\music_center.exe
+echo    exe:  %OUT%\RiverGodMusic.exe
 echo    zip:  %ZIP%
 echo  The zip can be copied to other PCs and unzipped to run.
 echo ============================================================

@@ -11,10 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 固定与本地一致的 Flutter 3.0(Dart 2.x),因为项目 sdk 约束为 >=2.17.0 <3.0.0
+      # Flutter 3.7(Dart 2.19)满足项目 sdk 约束 >=2.17.0 <3.0.0,
+      # 且官方支持 Visual Studio 2022,适配 windows-latest(仅装有 VS 2022)
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.0.0'
+          flutter-version: '3.7.12'
           channel: stable
 
       - name: 拉取依赖
@@ -25,13 +26,15 @@ jobs:
 
       - name: 打包 zip(直接可分发的运行包)
         shell: powershell
-        run: Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath 'music_center_windows.zip'
+        run: |
+          $releaseDir = Get-ChildItem -Path 'build\windows' -Recurse -Directory -Filter 'Release' | Where-Object { $_.FullName -like '*runner*' } | Select-Object -First 1
+          if (-not $releaseDir) { Write-Error '未找到 Release 产物目录'; exit 1 }
+          Write-Host "产物目录: $($releaseDir.FullName)"
+          Compress-Archive -Path "$($releaseDir.FullName)\*" -DestinationPath 'rivergod_music_windows.zip'
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: music-center-windows
-          path: |
-            music_center_windows.zip
-            build/windows/x64/runner/Release
+          name: rivergod-music-windows
+          path: rivergod_music_windows.zip
           if-no-files-found: error

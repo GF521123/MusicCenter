@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "cn.rivergod.music.center" "\0"
-            VALUE "FileDescription", "\u4e91\u76d8\u97f3\u4e50" "\0"
+            VALUE "FileDescription", "RiverGodMusic" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "music_center" "\0"
+            VALUE "InternalName", "RiverGodMusic" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 cn.rivergod.music.center. All rights reserved." "\0"
-            VALUE "OriginalFilename", "music_center.exe" "\0"
-            VALUE "ProductName", "\u4e91\u76d8\u97f3\u4e50" "\0"
+            VALUE "OriginalFilename", "RiverGodMusic.exe" "\0"
+            VALUE "ProductName", "RiverGodMusic" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
