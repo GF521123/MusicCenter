@@ -1,0 +1,63 @@
+name: Sync code from Gitee upstream
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # 每6小时自动执行(cron 为 UTC 时间)
+  workflow_dispatch: # 支持手动点按钮触发
+    inputs:
+      strategy:
+        description: '合并策略:merge=保留本地改动合并;theirs=完全以上游为准覆盖'
+        required: false
+        default: 'merge'
+        type: choice
+        options:
+          - merge
+          - theirs
+
+# 防止上一次任务未结束时又触发新的同步
+concurrency:
+  group: sync-from-gitee
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码(含完整历史)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 拉全历史,合并才有共同基线
+
+      - name: 配置 git 身份
+        run: |
+          git config --global user.name "RiverGod"
+          git config --global user.email "2278417331@qq.com"
+
+      # 上游地址写死:https://gitee.com/RiverGods/MusicCenter.git(公开仓库,免认证)
+      - name: 添加 Gitee 上游远程
+        run: |
+          git remote add gitee-upstream "https://gitee.com/RiverGods/MusicCenter.git"
+          echo "上游: https://gitee.com/RiverGods/MusicCenter.git"
+
+      - name: 拉取并合并上游代码
+        env:
+          STRATEGY: ${{ inputs.strategy || 'merge' }}
+        run: |
+          # 分支固定为 master(GitHub 仓库与 Gitee 上游同名同分支)
+          BRANCH="master"
+          git fetch gitee-upstream "$BRANCH"
+          if [ "$STRATEGY" = "theirs" ]; then
+            # 以上游为准,本地有分歧时用上游版本覆盖
+            git merge "gitee-upstream/$BRANCH" --allow-unrelated-histories -X theirs -m "chore: sync gitee upstream ($BRANCH)"
+          else
+            git merge "gitee-upstream/$BRANCH" --allow-unrelated-histories -m "chore: sync gitee upstream ($BRANCH)"
+          fi
+
+      - name: 推送回 GitHub
+        run: |
+          BRANCH="master"
+          git push origin "HEAD:$BRANCH"
